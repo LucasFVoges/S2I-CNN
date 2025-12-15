@@ -16,4 +16,4 @@ The data can be found here: https://doi.org/10.25592/uhhfdm.16468
 
 ## Software
 Python 3.11.3
-please refer to requirements.txt for packages used.
+please refer to requirements.txt for dependencies and packages.

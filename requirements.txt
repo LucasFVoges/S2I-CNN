@@ -6,6 +6,7 @@ scikit-learn==1.5.1
 pandas==2.2.2
 seaborn==0.13.2
 statsmodels==0.14.2
-jupyterlab==4.2.3
+jupyterlab
 pydot==2.0.0
 numpy
+streamlit
