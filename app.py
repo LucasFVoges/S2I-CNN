@@ -29,3 +29,10 @@ if btn_example:
     st.write("Compression: ", slider_compression)
     st.write("**Comment:** ", user_comment)
 
+
+form1 = st.sidebar.form("options")
+with form1:
+    st.write("This is a form, that does not load until clicked!")
+    selections = st.multiselect("Select different things:", ["A", "B", "C", "D"])
+    st.form_submit_button("Save")
+st.sidebar.write(selections)
