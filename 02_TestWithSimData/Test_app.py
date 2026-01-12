@@ -12,10 +12,20 @@ from functions.DataGenerator import data_gen
 
 # Set the dark style
 plt.style.use("dark_background")
+# Set layout
+st.set_page_config(layout="centered")
+st.html("""
+    <style>
+        .stMainBlockContainer {
+            max-width:50rem;
+        }
+    </style>
+    """
+)
 
 @st.cache_data
-def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peaks=3, peak_randomised_amount= 0.1, seed=12):
-    df = data_gen(n, length, resolution, noise, y_shift, num_peaks, peak_randomised_amount, seed)
+def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peaks=3, num_peaks_addition=1, peak_randomised_amount= 0.1, normalize=True, normalize_individually=False, seed=67):
+    df = data_gen(n, length, resolution, noise, y_shift, num_peaks, num_peaks_addition, peak_randomised_amount, normalize, normalize_individually, seed)
     return df
 
 data = load_data()
@@ -28,23 +38,33 @@ tab_data, tab_S2I, tab_CNN = st.tabs(["Data" ,"S2I", "CNN"])
 with tab_data:
     st.header("Data")
 
+    st.write("The Data can be generated here. Some combinations may be corrected in the code eg. the number of peaks cant be greater than half the length of the spectrum.")
+
     data_gen_form = st.form("Data Generator")
     with data_gen_form:
-        num = st.number_input("Number of Spectra per Class:", value=10, step=1, min_value=1, max_value=1000)
-        len = st.number_input("Length of Spectra:", value=50, step=1, min_value=10, max_value=1000)
-        n_peaks = st.number_input("Number of peaks:", value=3, step=1, min_value=1, max_value=100)
-        noi = st.slider("Noise:", 0.0, 10.0, 1.0)
-        y_shifted = st.slider("Shift:", 0.00, 1.00, 0.02)
-        peak_rand = st.slider("Randomised:", 0.0, 1.0, 0.1)
-        rand = st.checkbox("Random Seed")
+        data_col1, data_col2 = st.columns(2)
+        with data_col1:
+            num = st.number_input("Number of Spectra per Class:", value=10, step=1, min_value=10, max_value=10000)
+            len = st.number_input("Length of Spectra:", value=50, step=1, min_value=10, max_value=3000)
+            noi = st.slider("Noise:", 0.01, 10.00, 1.0)
+            y_shifted = st.slider("Shift:", 0.00, 1.00, 0.02)
+            rand = st.checkbox("Random Seed (else always 67)")
+        with data_col2:
+            n_peaks = st.number_input("Number of peaks:", value=3, step=1, min_value=1, max_value=1000)
+            n_peaks_add = st.number_input("Number of Added peaks (Second Class):", value=1, step=1, min_value=1, max_value=100)
+            peak_rand = st.slider("Randomised:", 0.0, 1.0, 0.1)
+            res = st.slider("Resolution:", 0.1, 1.0, 0.5, step=0.1, format="%0.1f")
+            norm = st.checkbox("Normalize Spectra [0,1]", True)
+            norm_indiv = st.checkbox("When normalized: every Spectra individually", False)
+
         submit = st.form_submit_button("generate new data")
 
     if submit:
         if rand:
             seeded = np.random.randint(1,1000)
         else:
-            seeded = 12
-        data = load_data(num, len, 0.5, noi, y_shifted, n_peaks, peak_rand, seeded)
+            seeded = 67
+        data = load_data(num, len, res, noi, y_shifted, n_peaks, n_peaks_add, peak_rand, norm, norm_indiv, seeded)
 
     fig, ax = plt.subplots()
     sns.lineplot(data=data.head(10).T, legend=False, dashes=False)
