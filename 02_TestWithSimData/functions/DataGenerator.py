@@ -5,7 +5,7 @@ import pandas as pd
 if __name__ == "__main__":
     pass
 
-def data_gen(n = 100,
+def data_gen(n = 10,
              length = 50,
              resolution = 0.4,
              noise = 1,
@@ -21,7 +21,7 @@ def data_gen(n = 100,
     Including 2 variants of a random spectrum (added normal distributions).
     Spectra can be normalized to [0,1].
 
-    :param n: number of spectra to generate for each Class! (default: 100).
+    :param n: number of spectra to generate for each Class! (default: 10).
     :type n: int
     :param length: number of spectrapoints to generate (default: 10, min: 10).
     :type length: int
@@ -79,7 +79,7 @@ def data_gen(n = 100,
         for i in range(range_peaks):
             this_amplitude = amplitudes[i] + np.random.uniform(0,peak_randomised_amount)
             this_center = centers[i] + np.random.uniform(-peak_randomised_amount*10,peak_randomised_amount*10)
-            this_width = widths[i] + np.random.uniform(-peak_randomised_amount*50,peak_randomised_amount*50)
+            this_width = widths[i] + np.random.uniform(0,peak_randomised_amount*50)
             y += this_amplitude * np.exp(-((x - this_center) ** 2) / (2 * this_width ** 2))
 
         # Add Gaussian noise

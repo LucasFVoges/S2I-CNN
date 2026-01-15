@@ -6,39 +6,38 @@ from sklearn.preprocessing import MinMaxScaler
 if __name__ == "__main__":
     pass
 
-def image_encoder(data, out_path, shema='RGB'):
+def image_encoder(data, shema='RGB'):
     """
     Converts spectral intensities to an Image. (1 Spectra)
 
     :param data: Spectral intensities.
     :type data: list of num
-    :param out_path: Path to save the image.
-    :type out_path: str
-    :param shema: Color Shema 'RGB', 'CMYK', 'HSV', 'LAB', 'L' (grayscale 2D) - (default: 'RGB').
+    :param shema: Color Shema 'BW', 'RGB', 'CMYK', 'HSV', 'LAB', 'L' (grayscale 2D) - (default: 'BW').
     :type shema: str
     :return: Value of success. Saves an image at the given output path.
     :rtype: bool
     """
 
     # checking input
-    if shema.upper() not in ['RGB', 'CMYK', 'HSV', 'LAB', 'L']:
+    shema = shema.upper()
+    if shema not in ['BW','RGB', 'CMYK', 'HSV', 'LAB', 'L']:
         print('Invalid color shema.')
         return False
 
-    if not os.path.isdir(out_path):
-        print('Invalid output path.')
-        return False
+    # Convert to numpy array if it's a list or pandas object
+    data = np.asarray(data)
 
-    if type(data) is not list:
-        print('Invalid data type.')
-        return False
-
-    if len(data) < 3:
-        print('Invalid data length. len is ', len(data), 'but should be 3')
-        return False
+    # if len(data) < 3:
+    #     print('Invalid data length. len is ', len(data), 'but should be 3')
+    #     return False
 
     # Convert to respective Sheme
-    if shema.upper() == 'RGB':
+    if shema == 'BW':
+        data = encode_8bit(data)
+        array_bw = np.array([data], dtype=np.uint8)
+        img = Image.fromarray(array_bw, 'L')
+
+    if shema == 'RGB':
         r_data = encode_8bit(data[0])
         g_data = encode_8bit(data[1])
         b_data = encode_8bit(data[2])
