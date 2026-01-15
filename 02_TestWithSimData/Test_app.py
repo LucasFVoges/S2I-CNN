@@ -17,7 +17,7 @@ st.set_page_config(layout="centered")
 st.html("""
     <style>
         .stMainBlockContainer {
-            max-width:50rem;
+            max-width:56rem;
         }
     </style>
     """
@@ -26,7 +26,14 @@ st.html("""
 @st.cache_data
 def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peaks=1, num_peaks_addition=1, peak_randomised_amount= 0.1, normalize=True, normalize_individually=False, seed=67):
     df = data_gen(n, length, resolution, noise, y_shift, num_peaks, num_peaks_addition, peak_randomised_amount, normalize, normalize_individually, seed)
-    return df
+
+    # Calculate derivatives
+    # todo: This is a Taylor Series Approximation, maybe a more sophisticated algorithm?
+    d1 = pd.DataFrame(np.gradient(df.values, axis=1), columns=df.columns, index=df.index)
+    d2 = pd.DataFrame(np.gradient(d1.values, axis=1), columns=df.columns, index=df.index)
+    d3 = pd.DataFrame(np.gradient(d2.values, axis=1), columns=df.columns, index=df.index)
+
+    return {"raw": df, "d1": d1, "d2": d2, "d3": d3}
 
 data = load_data()
 
@@ -53,7 +60,7 @@ with tab_data:
         data_col1, data_col2 = st.columns(2)
         with data_col1:
             num = st.number_input("Number of Spectra per Class:", value=10, step=1, min_value=10, max_value=10000)
-            len = st.number_input("Length of Spectra:", value=50, step=1, min_value=10, max_value=3000)
+            leng = st.number_input("Length of Spectra:", value=50, step=1, min_value=10, max_value=3000)
             noi = st.slider("Noise:", 0.01, 10.00, 1.0)
             y_shifted = st.slider("Shift:", 0.00, 1.00, 0.02)
             rand = st.checkbox("Random Seed? (else: 67)")
@@ -72,47 +79,76 @@ with tab_data:
             seeded = np.random.randint(1,1000)
         else:
             seeded = 67
-        data = load_data(num, len, res, noi, y_shifted, n_peaks, n_peaks_add, peak_rand, norm, norm_indiv, seeded)
+        data = load_data(num, leng, res, noi, y_shifted, n_peaks, n_peaks_add, peak_rand, norm, norm_indiv, seeded)
 
-    fig, ax = plt.subplots()
-    sns.lineplot(data=data.head(10).T, legend=False, dashes=False)
-    ax.set_ylim(ymin=0.0)
-    ax.set_xlabel("Wavenumber")
-    ax.set_ylabel("Intensity")
-    ax.set_title("Random Spectra Simulation")
-    st.pyplot(fig)
+    spec_tab, deriv_tab, deriv_2_tab, deriv_3_tab = st.tabs(["Spectra", "Spectra 1st Derivative", "Spectra 2nd Derivative", "Spectra 3rd Derivative"])
 
-    fig, ax = plt.subplots()
-    sns.lineplot(data=data.tail(10).T, legend=False, dashes=False)
-    ax.set_ylim(ymin=0.0)
-    ax.set_xlabel("Wavenumber")
-    ax.set_ylabel("Intensity")
-    ax.set_title("With Added Peak")
-    st.pyplot(fig)
+    def show_spectral_data(dtype = "raw", ymin0=True):
+        number_of_plots = num if num < 100 else 100
 
-    st.write("The first 5 and last 5 rows of the generated data:")
-    st.dataframe(data.head(5))
-    st.dataframe(data.tail(5))
+        col_spec_img1, col_spec_img2 = st.columns(2)
+        with col_spec_img1:
+            fig, ax = plt.subplots()
+            sns.lineplot(data=data[dtype].head(number_of_plots).T, legend=False, dashes=False)
+            if ymin0: ax.set_ylim(ymin=0.0)
+            ax.set_xlabel("Wavenumber")
+            ax.set_ylabel("Intensity")
+            ax.set_title("Random Spectra Simulation")
+            st.pyplot(fig)
 
-    # TODO: Make directly here the first and second derivative?
+        with col_spec_img2:
+            fig, ax = plt.subplots()
+            sns.lineplot(data=data[dtype].tail(number_of_plots).T, legend=False, dashes=False)
+            if ymin0: ax.set_ylim(ymin=0.0)
+            ax.set_xlabel("Wavenumber")
+            ax.set_ylabel("Intensity")
+            ax.set_title("With Added Peak")
+            st.pyplot(fig)
+
+        st.write("The first 5 and last 5 rows of the generated data:")
+        st.dataframe(data[dtype].head(5))
+        st.dataframe(data[dtype].tail(5))
+
+    with spec_tab:
+        st.write("**WARNING:** max 100 spectra are shown!")
+        show_spectral_data("raw", norm)
+
+    with deriv_tab:
+        show_spectral_data("d1", False)
+
+    with deriv_2_tab:
+        show_spectral_data("d2", False)
+
+    with deriv_3_tab:
+        show_spectral_data("d3", False)
 
 with tab_S2I:
     st.header("S2I")
-    st.write("The generated data can be converted to images. They need to be saved before used in the CNN.")
+    st.write("**WARNING:** Images displayed here are not the original images! "
+             "Due to anti-aliasing and the display in a visible size in the browser, "
+             "the Images may seem blurred or in a different size.")
 
-    st.write("EXAMPLE ONLY: Just the first and last spectra displayed")
+    # TODO: Show more than one image from the two classes!
 
-    img = image_encoder(data.iloc[0].values, "BW")
-    if img:
-        st.image(img, caption="First Spectra", use_container_width=True)
-    else:
-        st.error("Failed to generate image.")
+    # Local variables
+    x_size, y_size = 10000, 1000
+    # Input:
+    data_which_deriv = st.multiselect("Which spectra data should be used?", ["0st Derivative", "1st Derivative", "2st Derivative", "3st Derivative"], default=["0st Derivative"])
+    conv = st.selectbox("Select the conversion model:", ("BW")) #, "RGB", "CMYK", "HLS"
+    # Mapping:
+    mapping = {"0st Derivative": "raw", "1st Derivative": "d1", "2st Derivative": "d2", "3st Derivative": "d3"}
 
-    img = image_encoder(data.iloc[19].values, "BW")
-    if img:
-        st.image(img, caption="Last Spectra", use_container_width=True)
-    else:
-        st.error("Failed to generate image.")
+    for i, selection in enumerate(data_which_deriv):
+        selected_key = mapping[data_which_deriv[i]]
+
+        st.subheader(f"Image of {selection} Spectra:")
+        img = image_encoder(data[selected_key].iloc[0].values, conv)
+        if img: st.image(img.resize((x_size, y_size), Image.Resampling.BOX), caption="First Spectra", width="stretch")
+        else: st.error("Failed to generate image.")
+
+        img = image_encoder(data[selected_key].iloc[data[selected_key].shape[0] - 1].values, conv)
+        if img: st.image(img.resize((x_size, y_size), Image.Resampling.BOX), caption="Last Spectra", width="stretch")
+        else: st.error("Failed to generate image.")
 
 with tab_CNN:
     st.header("CNN")

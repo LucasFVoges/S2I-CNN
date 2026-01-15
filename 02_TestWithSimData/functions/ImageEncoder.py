@@ -11,7 +11,7 @@ def image_encoder(data, shema='RGB'):
     Converts spectral intensities to an Image. (1 Spectra)
 
     :param data: Spectral intensities.
-    :type data: list of num
+    :type data: array of num
     :param shema: Color Shema 'BW', 'RGB', 'CMYK', 'HSV', 'LAB', 'L' (grayscale 2D) - (default: 'BW').
     :type shema: str
     :return: Value of success. Saves an image at the given output path.
