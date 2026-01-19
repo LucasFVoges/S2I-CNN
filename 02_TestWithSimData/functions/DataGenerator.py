@@ -54,7 +54,7 @@ def data_gen(n = 10,
     if n < 1: n = 1
     if resolution > length: resolution = length
     if num_peaks < 1: num_peaks = 1
-    if num_peaks > length/2: num_peaks = length/2
+    # if num_peaks > length/2: num_peaks = length//2
     if num_peaks_addition < 1: num_peaks_addition = 1
     if noise <= 0: noise = 0.001
 
