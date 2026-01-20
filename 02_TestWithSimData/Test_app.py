@@ -1,14 +1,11 @@
 # Imports:
 import streamlit as st
-import datetime
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import savgol_filter
 from PIL import Image
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 
 from functions.ImageEncoder import image_encoder
 from functions.DataGenerator import data_gen
