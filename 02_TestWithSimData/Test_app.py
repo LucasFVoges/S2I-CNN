@@ -1,4 +1,5 @@
 # Imports:
+import time
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -6,15 +7,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import savgol_filter
 from PIL import Image
-
 from functions.ImageEncoder import image_encoder
 from functions.DataGenerator import data_gen
 from functions.Clustering import cluster_pca, cluster_tsne, cluster_kmeans, cluster_dbscan, classify_svm
+from functions.CNN import train_simple_cnn
+
 
 # Set the dark style
 plt.style.use("dark_background")
 # Set layout
-st.set_page_config(layout="centered")
+st.set_page_config(page_title="S2I-CNN", layout="centered")
 st.html("""
     <style>
         .stMainBlockContainer {
@@ -64,14 +66,17 @@ with tab_about:
     st.write("Spectra2Image CNN is a noval approach that is designed to use minimal differences in spectral data to classify them accordingly.")
     st.write("This approach use image conversion from classical spectra tabular data with the goal to utilise pre-trained image classification Networks.")
 
-    st.subheader("Future Improvements:")
-    st.write("1. Add more classes to the generated spectra, so that it is not a two class problem.")
-    st.write("4. Add more image conversion models.")
-    st.write("5. Generator can include baseline drift instead of simple y-shift.")
-    st.write("6. Add peaks to both classes instead of just one.")
-    st.write("7. Add clustering for 1st derivative data for all methods!")
+    st.info("**Info:** This simulation should provide the answer to the following question: "
+            "Does a spectra like dataset with minimal change between two classes can be differentiated. "
+            "Can the image based CNN compete with standard classification algorithms?")
 
-    st.write("For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.")
+    st.subheader("Future Improvements:")
+    st.write("2. Overwrite Seed settings, so that the generated spectra can be always the same.")
+    st.write("3. Add more image conversion models.")
+    st.write("4. Generator can include baseline drift instead of simple y-shift.")
+    st.write("5. Add peaks to both classes instead of just one.")
+    st.write("6. Add clustering for 1st derivative data for all methods!")
+    st.write("7. For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.")
 
 with tab_data:
     st.header("Data")
@@ -392,8 +397,96 @@ with tab_S2I:
             st.error("Failed to generate image.")
             break
 
+    if 'saved_images' not in st.session_state:
+        st.session_state.saved_images = None
+
+    images_l, images_c, images_r = st.columns(3)
+    with images_l: pass
+    with images_r: pass
+    with images_c:
+        if st.button("Generate all Images for CNN", type="primary", help="This will bring all spectra images into memory!"):
+            with st.spinner(text="Saving...", show_time=True):
+                st.session_state.cnn_results = None
+                st.session_state.saved_images = []
+                for i in range(len(data["raw"])):
+                    img = image_encoder(data, selection, i, mapping_conv[conv])
+                    st.session_state.saved_images.append(img)
+            st.success("Images saved!")
+
+
 with tab_CNN:
     st.header("CNN")
+    st.write("Train a simple CNN on the generated images. Train/Test split is 70/30.")
+    st.info("Images only change when new images are generated! NOT automatically updated! :warning:")
+
+    if 'cnn_results' not in st.session_state:
+        st.session_state.cnn_results = None
+
+    if st.session_state.saved_images is not None:
+        saved_images = st.session_state.saved_images
+        converted_img = saved_images[1].convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
+        st.image(converted_img, caption= "CONTROL - This is one of the images in memory...", width="stretch")
+
+    with st.form("cnn_hyperparams"):
+        c_col1, c_col2 = st.columns(2)
+        with c_col1:
+            e_val = st.number_input("Epochs:", value=10, min_value=1, max_value=100, step=5)
+        with c_col2:
+            b_val = st.select_slider("Batch Size:", options=[4, 8, 16, 32, 64, 128], value=16)
+
+        trainCNNbtn = st.form_submit_button("Run simple CNN Training", type="primary",
+                                            help="if disabled, you need to save images in S2I",
+                                            disabled=(st.session_state.saved_images is None))
+    if trainCNNbtn:
+        with st.spinner("Encoding images and training model...", show_time=True):
+            current_data = st.session_state.data["raw"]
+            num_total = len(current_data)
+            labels = ["First Class"] * (num_total // 2) + ["Second Class"] * (num_total // 2)
+            model, history, results = train_simple_cnn(st.session_state.saved_images, labels, epochs=e_val, batch_size=b_val)
+            st.session_state.cnn_results = {"history": history.history, "metrics": results}
+
+    if st.session_state.cnn_results is not None:
+        res = st.session_state.cnn_results
+        train_m, test_m, train_cnn_cm, test_cnn_cm = res["metrics"]
+        hist = res["history"]
+
+        st.success("Training Complete!")
+
+        st.subheader("Metrics:")
+        st.write("**Training Set:**")
+        tr_col = st.columns(4)
+        for i, (k, v) in enumerate(train_m.items()):
+            tr_col[i].metric(k, f"{v:.1%}")
+
+        st.write("**Test Set:**")
+        te_col = st.columns(4)
+        for i, (k, v) in enumerate(test_m.items()):
+            te_col[i].metric(k, f"{v:.1%}")
+
+        col_cm1, col_cm2 = st.columns(2)
+        with col_cm1:
+            st.write("**Confusion Matrix (Train):**")
+            st.table(train_cnn_cm)
+        with col_cm2:
+            st.write("**Confusion Matrix (Test):**")
+            st.table(test_cnn_cm)
+
+        st.subheader("Training History:")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            fig_loss, ax_loss = plt.subplots()
+            ax_loss.plot(hist['loss'], label='train')
+            ax_loss.plot(hist['val_loss'], label='val')
+            ax_loss.set_title("Model Loss")
+            ax_loss.legend()
+            st.pyplot(fig_loss)
+
+        with col_c2:
+            fig_acc, ax_acc = plt.subplots()
+            ax_acc.plot(hist['accuracy'], label='train')
+            ax_acc.plot(hist['val_accuracy'], label='val')
+            ax_acc.set_title("Model Accuracy")
+            st.pyplot(fig_acc)
 
 st.divider()
 
