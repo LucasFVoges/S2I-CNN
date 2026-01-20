@@ -14,7 +14,7 @@ def data_gen(n = 10,
              num_peaks_addition = 1,
              peak_randomised_amount = 0.05,
              normalize = True,
-             normalize_individually = False,
+             normalize_individually = "Vector",
              seed = 42):
     """
     generates a test Dataset
@@ -37,10 +37,10 @@ def data_gen(n = 10,
     :type num_peaks_addition: int
     :param peak_randomised_amount: maximal amount added to the center, amplitude and widht of every peak (default: 0.05).
     :type peak_randomised_amount: float
-    :param normalize: If data should be normalized to [0,1] (default: False).
+    :param normalize: If data should be scaled to [0,1] (default: False).
     :type normalize: bool
-    :param normalize_individually: If the normalization should be done individually for each spectrum. Else the whole dataset is scaled betweet 0 and 1 (default: True).
-    :type normalize_individually: bool
+    :param normalize_individually: Normalize specta with vector normalisation or SNV or MinMax (This should be done, to not simply classify by mean intensity diff)
+    :type normalize_individually: string
     :param seed: random seed for reproducibility (default: 42).
     :type seed: int
     :return: data frame with spectral intensities
@@ -65,7 +65,7 @@ def data_gen(n = 10,
 
     # Define the base spectrum parameters
     amplitudes = np.random.uniform(0.1,1,num_peaks+num_peaks_addition)
-    centers = np.random.uniform(0,1,num_peaks+num_peaks_addition) * length
+    centers = np.random.uniform(-0.1,1.1,num_peaks+num_peaks_addition) * length # with 0.1 addition the spectra will not drop at borders so hard
     widths = np.random.uniform(1,100,num_peaks+num_peaks_addition)
 
     for spec in range(n*2):
@@ -87,13 +87,25 @@ def data_gen(n = 10,
 
         spectra.append(y)
 
-    # Normalize if needed
+    # Normalize
+    if normalize_individually == "Vector":
+        spectra = [s / np.linalg.norm(s) for s in spectra]  # VECTOR NORMALIZATION
+
+    if normalize_individually == "SNV":
+        spectra = [(s - np.mean(s)) / np.std(s) for s in spectra] # SNV Normalization
+
+    if normalize_individually == "MinMax":
+        spectra = [(s - np.min(s)) / (np.max(s) - np.min(s)) for s in spectra]  # MINMAX Normalization
+
+    # Normalizes all spectra to a single min/max range
     if normalize:
-        if normalize_individually:
-            spectra = [(s - np.min(s)) / (np.max(s) - np.min(s)) for s in spectra]
-        else:
-            spectra_array = np.array(spectra)
-            spectra = (spectra_array - np.min(spectra_array)) / (np.max(spectra_array) - np.min(spectra_array))
+        spectra_array = np.array(spectra)
+        spectra = (spectra_array - np.min(spectra_array)) / (np.max(spectra_array) - np.min(spectra_array))
+
+
+
+
+
 
     # Return as a DataFrame where each row is a spectrum
     df = pd.DataFrame(spectra)

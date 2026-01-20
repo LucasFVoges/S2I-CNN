@@ -5,13 +5,14 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.signal import savgol_filter
 from PIL import Image
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
 from functions.ImageEncoder import image_encoder
 from functions.DataGenerator import data_gen
-from functions.Clustering import cluster_pca, cluster_tsne, cluster_kmeans, cluster_dbscan
+from functions.Clustering import cluster_pca, cluster_tsne, cluster_kmeans, cluster_dbscan, classify_svm
 
 # Set the dark style
 plt.style.use("dark_background")
@@ -27,15 +28,30 @@ st.html("""
 )
 
 @st.cache_data
-def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peaks=1, num_peaks_addition=1, peak_randomised_amount= 0.1, normalize=True, normalize_individually=False, seed=67):
-    df = data_gen(n, length, resolution, noise, y_shift, num_peaks, num_peaks_addition, peak_randomised_amount, normalize, normalize_individually, seed)
+def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peaks=1, num_peaks_addition=1, peak_randomised_amount= 0.1, normalize=True, normalize_individually="Vector", seed=67):
+    df = data_gen(n, length+12, resolution, noise, y_shift, num_peaks, num_peaks_addition, peak_randomised_amount, normalize, normalize_individually, seed)
 
-    # Calculate derivatives
-    d1 = pd.DataFrame(np.gradient(df.values, axis=1), columns=df.columns, index=df.index)
-    d2 = pd.DataFrame(np.gradient(d1.values, axis=1), columns=df.columns, index=df.index)
-    d3 = pd.DataFrame(np.gradient(d2.values, axis=1), columns=df.columns, index=df.index)
+    # Calculate derivatives with Savitzky-Golay:
+    window = 12
+    poly = 2
+    trim = 6
 
-    return {"raw": df, "d1": d1, "d2": d2, "d3": d3}
+    d0_vals = savgol_filter(df.values, window_length=window, polyorder=poly, deriv=0, axis=1)
+    d1_vals = savgol_filter(df.values, window_length=window, polyorder=poly, deriv=1, axis=1)
+    d2_vals = savgol_filter(df.values, window_length=window, polyorder=poly+1, deriv=2, axis=1)
+    d3_vals = savgol_filter(df.values, window_length=window, polyorder=poly+2, deriv=3, axis=1)
+
+    d0 = pd.DataFrame(d0_vals, columns=df.columns, index=df.index).iloc[:, trim:-trim]
+    d1 = pd.DataFrame(d1_vals, columns=df.columns, index=df.index).iloc[:, trim:-trim]
+    d2 = pd.DataFrame(d2_vals, columns=df.columns, index=df.index).iloc[:, trim:-trim]
+    d3 = pd.DataFrame(d3_vals, columns=df.columns, index=df.index).iloc[:, trim:-trim]
+
+    # Alternative implementation of the derivative calculation:
+    # d1 = pd.DataFrame(np.gradient(df.values, axis=1), columns=df.columns, index=df.index)
+    # d2 = pd.DataFrame(np.gradient(d1.values, axis=1), columns=df.columns, index=df.index)
+    # d3 = pd.DataFrame(np.gradient(d2.values, axis=1), columns=df.columns, index=df.index)
+
+    return {"raw": d0, "d1": d1, "d2": d2, "d3": d3}
 
 if 'data' not in st.session_state:
     st.session_state.data = load_data()
@@ -53,34 +69,42 @@ with tab_about:
 
     st.subheader("Future Improvements:")
     st.write("1. Add more classes to the generated spectra, so that it is not a two class problem.")
-    st.write("2. Change the derivative function to a more complex Savitzky-Golay function.")
-    st.write("3. Add more images from the conversion (at the moment just first and last spectra are shown from the set.")
-    st.write("4. Add a selection so that only a part (fingerprint area) of the spectra will be used...")
-    st.write("5. Add more image conversion models.")
+    st.write("4. Add more image conversion models.")
+    st.write("5. Generator can include baseline drift instead of simple y-shift.")
+    st.write("6. Add peaks to both classes instead of just one.")
+    st.write("7. Add clustering for 1st derivative data for all methods!")
 
     st.write("For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.")
 
 with tab_data:
     st.header("Data")
 
-    st.write("The Data can be generated here. Some combinations may be corrected in the code eg. the number of peaks cant be greater than half the length of the spectrum.")
+    norm_help = """
+    **Normalization Methods:**
+    *applied to each spectrum individually*
+    - **Vector (L2):** $y_i = \\frac{x_i}{\\sqrt{\\sum x_i^2}}$
+    - **SNV (Standard Normal Variate):** $y_i = \\frac{x_i - \\bar{x}}{s}$
+    - **MinMax:** $y_i = \\frac{x_i - min(x)}{max(x) - min(x)}$
+    """
+
+    st.write("The Data can be generated here. Some combinations may be corrected. A Savitzky-Golay filter is applied to the spectra.")
 
     data_gen_form = st.form("Data Generator")
     with data_gen_form:
         data_col1, data_col2 = st.columns(2)
         with data_col1:
             num = st.number_input("Number of Spectra per Class:", value=10, step=1, min_value=10, max_value=10000)
-            leng = st.number_input("Length of Spectra:", value=50, step=1, min_value=10, max_value=3000)
+            leng = st.number_input("Length of Spectra:", value=50, step=1, min_value=20, max_value=3000)
             noi = st.slider("Noise:", 0.01, 10.00, 1.0)
             y_shifted = st.slider("Shift:", 0.00, 1.00, 0.02)
             rand = st.checkbox("Random Seed? (else: 67)")
         with data_col2:
             n_peaks = st.number_input("Number of peaks:", value=1, step=1, min_value=1, max_value=1000)
             n_peaks_add = st.number_input("Number of Added peaks (Second Class):", value=1, step=1, min_value=1, max_value=100)
-            peak_rand = st.slider("Randomised:", 0.0, 1.0, 0.1)
-            res = st.slider("Resolution:", 0.1, 1.0, 0.5, step=0.1, format="%0.1f")
-            norm = st.checkbox("Normalize Spectra [0,1]", True)
-            norm_indiv = st.checkbox("When normalized: every Spectra individually", False)
+            peak_rand = st.slider("Randomised:", 0.0, 1.0, 0.1, help="Strength of peak width, position and amplitude randomisation.")
+            res = st.slider("Resolution:", 0.1, 1.0, 0.5, step=0.1, format="%0.1f", help="length / resolution = datapoints")
+            norm = st.checkbox("MinMax Scaling", True, help="Scale the whole dataset between 0 and 1.")
+            norm_indiv = st.selectbox("Normalisation", ("None", "Vector", "SNV", "MinMax"), index=1,help=norm_help)
 
         submit = st.form_submit_button("generate new data")
 
@@ -95,6 +119,7 @@ with tab_data:
         st.session_state.pca_variance = None
         st.session_state.kmeans_results = None
         st.session_state.dbscan_results = None
+        st.session_state.svm_results = None
         st.rerun()
 
     spec_tab, deriv_tab, deriv_2_tab, deriv_3_tab = st.tabs(["Spectra", "Spectra 1st Derivative", "Spectra 2nd Derivative", "Spectra 3rd Derivative"])
@@ -143,7 +168,7 @@ with tab_data:
 
 with tab_cluster:
     st.header("Clustering")
-    st.write("Classic clustering machine learning algorithms to have a baseline for the classification performance.")
+    st.write("Classic clustering and classification machine learning algorithms to have a baseline for the classification performance.")
 
     # Initialize session state for clustering results
     if 'pca_df' not in st.session_state:
@@ -155,6 +180,10 @@ with tab_cluster:
         st.session_state.kmeans_results = None
     if 'dbscan_results' not in st.session_state:
         st.session_state.dbscan_results = None
+    if 'svm_results' not in st.session_state:
+        st.session_state.svm_results = None
+
+    mapping_data = {"Spectra": "raw", "1st Derivative": "d1"}
 
     st.subheader("PCA:")
     st.write("A simple PCA scores plot. When classes can be directly seen, the generated data may be to simple...")
@@ -230,15 +259,19 @@ with tab_cluster:
         st.write("**Confusion Matrix:**")
         st.table(confusion_matrix)
 
+        st.info("Note: Clusters can be switched as this is not supervised learning! They are selected as correct by majority vote.")
+
     st.subheader("DBSCAN Clustering:")
     st.info(":warning: NOT PROPERLY WORKING :warning:")
-    db_col1, db_col2 = st.columns(2)
-    with db_col1:
-        eps = st.number_input("Epsilon (eps):", value=0.50, step=0.01, min_value=0.01)
-    with db_col2:
-        min_s = st.number_input("Min Samples:", value=7, step=1, min_value=1)
+    with st.form("dbscan_form"):
+        db_col1, db_col2 = st.columns(2)
+        with db_col1:
+            eps = st.number_input("Epsilon (eps):", value=0.5, step=0.1, min_value=0.01)
+        with db_col2:
+            min_s = st.number_input("Min Samples:", value=5, step=1, min_value=1)
+        db_submit = st.form_submit_button("Run DBSCAN")
 
-    if st.button("Run DBSCAN"):
+    if db_submit:
         db_data = data["raw"]
         n_samples = len(db_data)
         labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples // 2)
@@ -272,16 +305,60 @@ with tab_cluster:
             st.info(
                 f"Note: The 'Noise' line represents the average of the {db_metrics['Noise Points']} points that didn't fit into any cluster.")
 
+    st.subheader("SVM Classification Baseline:")
+    st.write("Supervised baseline (70/30 Train/Test split).")
+
+    with st.form("svm_form"):
+        svm_col1, svm_col2 = st.columns(2)
+        with svm_col1:
+            kernel = st.selectbox("Kernel:", ("linear", "poly", "rbf", "sigmoid"), help="Determines the shape of the decision boundary. 'linear' is simple, 'rbf' handles complex non-linear patterns.")
+        with svm_col2:
+            c_val = st.number_input("C (Regularization):", value=1.0, min_value=0.01, step=0.1, help="Controls the trade-off between smooth boundary and classifying training points correctly. Smaller C = smoother boundary (less overfitting).")
+            data_channel = st.selectbox("Select the data:", ("Spectra", "1st Derivative"), index=0)
+        svm_submit = st.form_submit_button("Run SVM Classification")
+
+    if svm_submit:
+        svm_data = data[mapping_data[data_channel]]
+        n_samples = len(svm_data)
+        labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples // 2)
+        st.session_state.svm_results = classify_svm(svm_data, labels, kernel=kernel, c=c_val)
+
+    if st.session_state.svm_results is not None:
+        svm_train, svm_test, cm_train, cm_test = st.session_state.svm_results
+
+        st.write("**Training Set Metrics:**")
+        tr_col1, tr_col2, tr_col3, tr_col4 = st.columns(4)
+        tr_col1.metric("Accuracy", f"{svm_train['Accuracy']:.1%}")
+        tr_col2.metric("Precision", f"{svm_train['Precision']:.1%}")
+        tr_col3.metric("Recall", f"{svm_train['Recall']:.1%}")
+        tr_col4.metric("F1-Score", f"{svm_train['F1-Score']:.1%}")
+
+        st.write("**Test Set Metrics:**")
+        te_col1, te_col2, te_col3, te_col4 = st.columns(4)
+        te_col1.metric("Accuracy", f"{svm_test['Accuracy']:.1%}")
+        te_col2.metric("Precision", f"{svm_test['Precision']:.1%}")
+        te_col3.metric("Recall", f"{svm_test['Recall']:.1%}")
+        te_col4.metric("F1-Score", f"{svm_test['F1-Score']:.1%}")
+
+        col_cm1, col_cm2 = st.columns(2)
+        with col_cm1:
+            st.write("**Confusion Matrix (Train):**")
+            st.table(cm_train)
+
+        with col_cm2:
+            st.write("**Confusion Matrix (Test):**")
+            st.table(cm_test)
+
+
 with tab_S2I:
     st.header("S2I")
-    st.write("**WARNING:** Images displayed here are not the original images! "
+    st.info("**WARNING:** Images displayed here are not the original images! "
              "Due to anti-aliasing and the display in a visible size in the browser, "
-             "the Images may seem blurred or in a different size."
+             "the Images may seem blurred or in a different size. "
              "**Selection** of the data (derivatives) is important, as it is used in the order selected. For BW (Black and White) model, only the first selection is used..." )
-    st.write("*ll conversion models use 3 input data! Except BW which uses just one channel.")
 
     # Local variables
-    x_size, y_size = 1000, 100
+    x_size, y_size = 1000, 40
 
     # Input:
     data_which_deriv = st.multiselect("Which spectra data should be used? (order matters!)", ["0st Derivative", "1st Derivative", "2st Derivative", "3st Derivative"], default=["0st Derivative", "1st Derivative", "2st Derivative"])
@@ -298,21 +375,25 @@ with tab_S2I:
 
     st.subheader(f"Image of Spectra for {conv} Conversion:")
 
-    # Image for 1st class
-    img = image_encoder(data, selection, 0, mapping_conv[conv])
-    if img:
-        converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
-        st.image(converted_img, caption="First Spectra", width="stretch")
-    else:
-        st.error("Failed to generate image.")
-
-    # Image for 2nd class
-    img = image_encoder(data, selection, data["raw"].shape[0] - 1, mapping_conv[conv])
-    if img:
-        converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
-        st.image(converted_img, caption="Last Spectra", width="stretch")
-    else:
-        st.error("Failed to generate image.")
+    # Image examples
+    st.text("First Class:")
+    for i in range(10):
+        img = image_encoder(data, selection, i, mapping_conv[conv])
+        if img:
+            converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
+            st.image(converted_img, width="stretch")
+        else:
+            st.error("Failed to generate image.")
+            break
+    st.text("Second Class:")
+    for i in range(10):
+        img = image_encoder(data, selection, data["raw"].shape[0] - (i+1), mapping_conv[conv])
+        if img:
+            converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
+            st.image(converted_img, width="stretch")
+        else:
+            st.error("Failed to generate image.")
+            break
 
 with tab_CNN:
     st.header("CNN")

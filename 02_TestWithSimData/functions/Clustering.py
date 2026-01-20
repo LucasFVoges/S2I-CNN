@@ -1,6 +1,8 @@
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.decomposition import PCA
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
 from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
@@ -128,3 +130,43 @@ def cluster_dbscan(data, labels, eps=0.5, min_samples=5):
     df_results["Cluster"] = [f"Cluster {c} ({mapping[c]})" if c != -1 else "Noise" for c in cluster_labels]
 
     return df_results, metrics
+
+def classify_svm(data, labels, kernel='linear', c=1.0):
+    """
+    Classifies the spectral data using a Support Vector Machine (SVM)
+    """
+    # Split data for a realistic "baseline" evaluation
+    X_train, X_test, y_train, y_test = train_test_split(
+        data, labels, test_size=0.3, random_state=67, stratify=labels
+    )
+
+    clf = SVC(kernel=kernel, C=c)
+    clf.fit(X_train, y_train)
+    y_pred_train = clf.predict(X_train)
+    y_pred_test = clf.predict(X_test)
+
+    # Function to bundle metrics to avoid repetition
+    def get_metrics(y_true, y_pred):
+        return {
+            "Accuracy": accuracy_score(y_true, y_pred),
+            "Precision": precision_score(y_true, y_pred, pos_label="Second Class", zero_division=0),
+            "Recall": recall_score(y_true, y_pred, pos_label="Second Class", zero_division=0),
+            "F1-Score": f1_score(y_true, y_pred, pos_label="Second Class", zero_division=0)
+        }
+
+    metrics_train = get_metrics(y_train, y_pred_train)
+    metrics_test = get_metrics(y_test, y_pred_test)
+
+    # Confusion matrix for training set
+    cm_train = pd.crosstab(
+        pd.Series(y_train, name='Actual'),
+        pd.Series(y_pred_train, name='Predicted')
+    )
+
+    # Confusion matrix for test set
+    cm_test = pd.crosstab(
+        pd.Series(y_test, name='Actual'),
+        pd.Series(y_pred_test, name='Predicted')
+    )
+
+    return metrics_train, metrics_test, cm_train, cm_test
