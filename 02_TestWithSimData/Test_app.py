@@ -55,6 +55,8 @@ def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peak
 if 'data' not in st.session_state:
     st.session_state.data = load_data()
 data = st.session_state.data
+if 'initial_seed' not in st.session_state:
+    st.session_state.initial_seed = 67
 
 st.title("S2I-CNN - Simulation :streamlit:")
 st.write("An example of how the 'Spectra2Image CNN' can be used for 'simulated' data.")
@@ -71,12 +73,11 @@ with tab_about:
             "Can the image based CNN compete with standard classification algorithms?")
 
     st.subheader("Future Improvements:")
-    st.write("2. Overwrite Seed settings, so that the generated spectra can be always the same.")
-    st.write("3. Add more image conversion models.")
-    st.write("4. Generator can include baseline drift instead of simple y-shift.")
-    st.write("5. Add peaks to both classes instead of just one.")
-    st.write("6. Add clustering for 1st derivative data for all methods!")
-    st.write("7. For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.")
+    st.write(". Add more image conversion models.")
+    st.write(". Generator can include baseline drift instead of simple y-shift.")
+    st.write(". Add peaks to both classes instead of just one.")
+    st.write(". Add clustering for 1st derivative data for all methods!")
+    st.write(". For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.")
 
 with tab_data:
     st.header("Data")
@@ -99,7 +100,8 @@ with tab_data:
             leng = st.number_input("Length of Spectra:", value=50, step=1, min_value=20, max_value=3000)
             noi = st.slider("Noise:", 0.01, 10.00, 1.0)
             y_shifted = st.slider("Shift:", 0.00, 1.00, 0.02)
-            rand = st.checkbox("Random Seed? (else: 67)")
+            rand_num = st.slider("Seed:", 1, 1000, st.session_state.initial_seed)
+            rand = st.checkbox("Random Seed?", help="use a random numer instead of a fixed seed from top.")
         with data_col2:
             n_peaks = st.number_input("Number of peaks:", value=1, step=1, min_value=1, max_value=1000)
             n_peaks_add = st.number_input("Number of Added peaks (Second Class):", value=1, step=1, min_value=1, max_value=100)
@@ -114,7 +116,9 @@ with tab_data:
         if rand:
             seeded = np.random.randint(1,1000)
         else:
-            seeded = 67
+            seeded = rand_num
+        st.session_state.initial_seed = seeded
+
         st.session_state.data = load_data(num, leng, res, noi, y_shifted, n_peaks, n_peaks_add, peak_rand, norm, norm_indiv, seeded)
         st.session_state.pca_df = None
         st.session_state.tsne_df = None
@@ -190,7 +194,7 @@ with tab_cluster:
     st.subheader("PCA:")
     st.write("A simple PCA scores plot. When classes can be directly seen, the generated data may be to simple...")
 
-    if st.button("Run PCA"):
+    if st.button("Run PCA", type="primary"):
         pca_data = data["raw"]
         n_samples = len(pca_data)
         labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples // 2)
@@ -209,7 +213,7 @@ with tab_cluster:
 
 
     st.subheader("T-SNE Clustering:")
-    if st.button("Run T-SNE Clustering"):
+    if st.button("Run T-SNE Clustering", type="primary"):
         tsne_data = data["raw"]
         n_samples = len(tsne_data)
         labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples - n_samples // 2)
@@ -224,7 +228,7 @@ with tab_cluster:
 
 
     st.subheader("K-Means Clustering:")
-    if st.button("Run K-Means Clustering"):
+    if st.button("Run K-Means Clustering", type="primary"):
         km_data = data["raw"]
         n_samples = len(km_data)
         labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples // 2)
@@ -317,7 +321,7 @@ with tab_cluster:
         with svm_col2:
             c_val = st.number_input("C (Regularization):", value=1.0, min_value=0.01, step=0.1, help="Controls the trade-off between smooth boundary and classifying training points correctly. Smaller C = smoother boundary (less overfitting).")
             data_channel = st.selectbox("Select the data:", ("Spectra", "1st Derivative"), index=0)
-        svm_submit = st.form_submit_button("Run SVM Classification")
+        svm_submit = st.form_submit_button("Run SVM Classification", type="primary")
 
     if svm_submit:
         svm_data = data[mapping_data[data_channel]]
@@ -377,6 +381,22 @@ with tab_S2I:
 
     st.subheader(f"Image of Spectra for {conv} Conversion:")
 
+    if 'saved_images' not in st.session_state:
+        st.session_state.saved_images = None
+
+    images_l, images_c, images_r = st.columns(3)
+    with images_l: pass
+    with images_r: pass
+    with images_c:
+        if st.button("Save all Images for CNN", type="primary", help="This will bring all spectra images into memory!"):
+            with st.spinner(text="Saving...", show_time=True):
+                st.session_state.cnn_results = None
+                st.session_state.saved_images = []
+                for i in range(len(data["raw"])):
+                    img = image_encoder(data, selection, i, mapping_conv[conv])
+                    st.session_state.saved_images.append(img)
+            st.success("Images saved!")
+
     # Image examples
     st.text("First Class:")
     for i in range(10):
@@ -396,22 +416,6 @@ with tab_S2I:
         else:
             st.error("Failed to generate image.")
             break
-
-    if 'saved_images' not in st.session_state:
-        st.session_state.saved_images = None
-
-    images_l, images_c, images_r = st.columns(3)
-    with images_l: pass
-    with images_r: pass
-    with images_c:
-        if st.button("Generate all Images for CNN", type="primary", help="This will bring all spectra images into memory!"):
-            with st.spinner(text="Saving...", show_time=True):
-                st.session_state.cnn_results = None
-                st.session_state.saved_images = []
-                for i in range(len(data["raw"])):
-                    img = image_encoder(data, selection, i, mapping_conv[conv])
-                    st.session_state.saved_images.append(img)
-            st.success("Images saved!")
 
 
 with tab_CNN:
