@@ -16,9 +16,9 @@ def cluster_pca(data, labels):
         "clusters" the spectral data using a pca
 
         :param data: spectral data in form of an array
-        :type data: array
+        :type data: dataframe, array
         :param labels: labels for the data
-        :type labels: array
+        :type labels: dataframe, array
 
     """
     pca = PCA(n_components=2)

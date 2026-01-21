@@ -10,12 +10,10 @@ from PIL import Image
 from functions.ImageEncoder import image_encoder
 from functions.DataGenerator import data_gen
 from functions.Clustering import cluster_pca, cluster_tsne, cluster_kmeans, cluster_dbscan, classify_svm
-from functions.CNN import train_simple_cnn
+from functions.CNN import train_simple_cnn, train_pretrained_cnn
 
-
-# Set the dark style
+# Streamlit Layout
 plt.style.use("dark_background")
-# Set layout
 st.set_page_config(page_title="S2I-CNN", layout="centered")
 st.html("""
     <style>
@@ -52,16 +50,31 @@ def load_data(n = 10, length=50, resolution=0.5, noise=1, y_shift=0.02, num_peak
 
     return {"raw": d0, "d1": d1, "d2": d2, "d3": d3}
 
+# Session State Setup
 if 'data' not in st.session_state:
     st.session_state.data = load_data()
-data = st.session_state.data
 if 'initial_seed' not in st.session_state:
     st.session_state.initial_seed = 67
+if 'pca_df' not in st.session_state:
+    st.session_state.pca_df = None
+    st.session_state.pca_variance = None
+if 'tsne_df' not in st.session_state:
+    st.session_state.tsne_df = None
+if 'kmeans_results' not in st.session_state:
+    st.session_state.kmeans_results = None
+if 'dbscan_results' not in st.session_state:
+    st.session_state.dbscan_results = None
+if 'svm_results' not in st.session_state:
+    st.session_state.svm_results = None
+if 'saved_images' not in st.session_state:
+    st.session_state.saved_images = None
+
+data = st.session_state.data
 
 st.title("S2I-CNN - Simulation :streamlit:")
 st.write("An example of how the 'Spectra2Image CNN' can be used for 'simulated' data.")
 
-tab_about, tab_data, tab_cluster, tab_S2I, tab_CNN = st.tabs(["About", "Data", "Clustering" ,"S2I", "CNN"], default="Data")
+tab_about, tab_data, tab_cluster, tab_S2I, tab_CNN = st.tabs(["About", "Data", "Clustering", "S2I", "CNN"], default="Data")
 
 with tab_about:
     st.header("About S2I - CNN")
@@ -110,9 +123,9 @@ with tab_data:
             norm = st.checkbox("MinMax Scaling", True, help="Scale the whole dataset between 0 and 1.")
             norm_indiv = st.selectbox("Normalisation", ("None", "Vector", "SNV", "MinMax"), index=1,help=norm_help)
 
-        submit = st.form_submit_button("generate new data")
+        submit_data = st.form_submit_button("generate new data")
 
-    if submit:
+    if submit_data:
         if rand:
             seeded = np.random.randint(1,1000)
         else:
@@ -169,25 +182,9 @@ with tab_data:
     with deriv_3_tab:
         show_spectral_data("d3", False)
 
-
-
-
 with tab_cluster:
     st.header("Clustering")
     st.write("Classic clustering and classification machine learning algorithms to have a baseline for the classification performance.")
-
-    # Initialize session state for clustering results
-    if 'pca_df' not in st.session_state:
-        st.session_state.pca_df = None
-        st.session_state.pca_variance = None
-    if 'tsne_df' not in st.session_state:
-        st.session_state.tsne_df = None
-    if 'kmeans_results' not in st.session_state:
-        st.session_state.kmeans_results = None
-    if 'dbscan_results' not in st.session_state:
-        st.session_state.dbscan_results = None
-    if 'svm_results' not in st.session_state:
-        st.session_state.svm_results = None
 
     mapping_data = {"Spectra": "raw", "1st Derivative": "d1"}
 
@@ -355,7 +352,6 @@ with tab_cluster:
             st.write("**Confusion Matrix (Test):**")
             st.table(cm_test)
 
-
 with tab_S2I:
     st.header("S2I")
     st.info("**WARNING:** Images displayed here are not the original images! "
@@ -380,9 +376,6 @@ with tab_S2I:
     mapping_conv = {"BW: Black and White": "BW", "RGB: Red Green Blue": "RGB", "HSL: Hue Saturation Lightness": "HSV", "LAB: Lightness A B": "LAB"}
 
     st.subheader(f"Image of Spectra for {conv} Conversion:")
-
-    if 'saved_images' not in st.session_state:
-        st.session_state.saved_images = None
 
     images_l, images_c, images_r = st.columns(3)
     with images_l: pass
@@ -417,7 +410,6 @@ with tab_S2I:
             st.error("Failed to generate image.")
             break
 
-
 with tab_CNN:
     st.header("CNN")
     st.write("Train a simple CNN on the generated images. Train/Test split is 70/30.")
@@ -435,18 +427,25 @@ with tab_CNN:
         c_col1, c_col2 = st.columns(2)
         with c_col1:
             e_val = st.number_input("Epochs:", value=10, min_value=1, max_value=100, step=5)
+            cnn_type = st.selectbox("Model Type:", ["Simple 1D-CNN", "Pretrained MobileNetV2"], help="MobileNetV2 converts the images to 224x224")
         with c_col2:
             b_val = st.select_slider("Batch Size:", options=[4, 8, 16, 32, 64, 128], value=16)
 
-        trainCNNbtn = st.form_submit_button("Run simple CNN Training", type="primary",
+        trainCNNbtn = st.form_submit_button("Run CNN Training", type="primary",
                                             help="if disabled, you need to save images in S2I",
                                             disabled=(st.session_state.saved_images is None))
     if trainCNNbtn:
-        with st.spinner("Encoding images and training model...", show_time=True):
+        with st.spinner(f"Training {cnn_type}", show_time=True):
             current_data = st.session_state.data["raw"]
             num_total = len(current_data)
             labels = ["First Class"] * (num_total // 2) + ["Second Class"] * (num_total // 2)
-            model, history, results = train_simple_cnn(st.session_state.saved_images, labels, epochs=e_val, batch_size=b_val)
+
+            if cnn_type == "Simple 1D-CNN":
+                model, history, results = train_simple_cnn(st.session_state.saved_images, labels, epochs=e_val,
+                                                           batch_size=b_val)
+            else:
+                model, history, results = train_pretrained_cnn(st.session_state.saved_images, labels, epochs=e_val,
+                                                               batch_size=b_val)
             st.session_state.cnn_results = {"history": history.history, "metrics": results}
 
     if st.session_state.cnn_results is not None:
