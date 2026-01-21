@@ -28,7 +28,7 @@ def calculate_metrics(y_true, y_pred_prob):
         "Recall": recall_score(y_true, y_pred, zero_division=0),
         "F1-Score": f1_score(y_true, y_pred, zero_division=0)
     }
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     cm_df = pd.DataFrame(cm, index=["Actual First", "Actual Second"], columns=["Pred First", "Pred Second"])
     return metrics, cm_df
 
@@ -94,7 +94,7 @@ def train_pretrained_cnn(images, labels, epochs=5, batch_size=16):
     # We resize our 1D image to 224x224 to fit standard architectures
     X = []
     for img in images:
-        img_rgb = img.convert('RGB').resize((224, 224), Image.Resampling.BOX)
+        img_rgb = img.convert('RGB').resize((224, 224), Image.Resampling.BOX, reducing_gap=3)
         X.append(np.array(img_rgb))
 
     X = np.array(X).astype('float32')

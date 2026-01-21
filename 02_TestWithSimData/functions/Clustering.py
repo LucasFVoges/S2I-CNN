@@ -43,12 +43,17 @@ def cluster_tsne(data, labels):
     return df
 
 
-def cluster_kmeans(data, labels, n_clusters=2):
+def cluster_kmeans(data, labels, n_clusters=2, algorithm = "lloyd", pre_pca=False):
     """
     Clusters the spectral data using K-Means and returns centroids/averages
     """
-    kmeans = KMeans(n_clusters=n_clusters, n_init='auto') #random_state=67,
-    cluster_labels = kmeans.fit_predict(data)
+    if pre_pca:
+        pca = PCA(n_components=5)
+        cluster_input = pca.fit_transform(data)
+    else:
+        cluster_input = data
+    kmeans = KMeans(n_clusters=n_clusters, init="k-means++", n_init='auto', algorithm=algorithm) #random_state=67,
+    cluster_labels = kmeans.fit_predict(cluster_input)
 
     mapping_df = pd.DataFrame({
         "Actual": labels,
@@ -81,12 +86,15 @@ def cluster_kmeans(data, labels, n_clusters=2):
     actual_means = df_temp.groupby("Actual Class").mean(numeric_only=True)
 
     df_temp["Predicted Cluster"] = [f"Cluster {c} ({mapping[c]})" for c in cluster_labels]
+
+    # Calculate means AND standard deviations for the clusters
     predicted_means = df_temp.groupby("Predicted Cluster").mean(numeric_only=True)
+    predicted_stds = df_temp.groupby("Predicted Cluster").std(numeric_only=True)
 
     # Confusion matrix
     confusion_matrix = pd.crosstab(df_temp["Actual Class"], df_temp["Predicted Cluster"])
 
-    return actual_means, predicted_means, confusion_matrix, metrics
+    return actual_means, (predicted_means, predicted_stds), confusion_matrix, metrics
 
 
 def cluster_dbscan(data, labels, eps=0.5, min_samples=5):
@@ -131,13 +139,19 @@ def cluster_dbscan(data, labels, eps=0.5, min_samples=5):
 
     return df_results, metrics
 
-def classify_svm(data, labels, kernel='linear', c=1.0):
+def classify_svm(data, labels, kernel='linear', c=1.0, use_pca=False, pca_comp=5):
     """
     Classifies the spectral data using a Support Vector Machine (SVM)
     """
+    if use_pca:
+        pca = PCA(n_components=pca_comp)
+        svm_data = pca.fit_transform(data)
+    else:
+        svm_data = data
+
     # Split data for a realistic "baseline" evaluation
     X_train, X_test, y_train, y_test = train_test_split(
-        data, labels, test_size=0.3, random_state=67, stratify=labels
+        svm_data, labels, test_size=0.3, random_state=67, stratify=labels
     )
 
     clf = SVC(kernel=kernel, C=c)

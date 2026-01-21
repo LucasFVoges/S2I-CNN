@@ -86,11 +86,16 @@ with tab_about:
             "Can the image based CNN compete with standard classification algorithms?")
 
     st.subheader("Future Improvements:")
-    st.write(". Add more image conversion models.")
-    st.write(". Generator can include baseline drift instead of simple y-shift.")
-    st.write(". Add peaks to both classes instead of just one.")
-    st.write(". Add clustering for 1st derivative data for all methods!")
-    st.write(". For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.")
+    future_add_text = """
+        - Add more image conversion models.
+        - Generator can include baseline drift instead of simple y-shift.
+        - Add peaks to both classes instead of just one would make more consistent intensities.
+        - Add clustering for 1st derivative data for all methods!
+        - For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.
+        - Train and Test split are random. Maybe it would be better to use a fixed set for all methods, when data is generated.
+        - For Classification: Use the PCA or T-SNE results for the K-Means clustering or SVM.
+        """
+    st.write(future_add_text)
 
 with tab_data:
     st.header("Data")
@@ -222,42 +227,77 @@ with tab_cluster:
         sns.scatterplot(data=st.session_state.tsne_df, x="TSNE1", y="TSNE2", hue="Class", palette="viridis", legend=False, ax=ax_tsne)
         st.pyplot(fig_tsne)
 
-
-
     st.subheader("K-Means Clustering:")
-    if st.button("Run K-Means Clustering", type="primary"):
-        km_data = data["raw"]
+    with st.expander("Explanation"):
+        st.write("""
+            **K-Means clustering**
+            
+            Uses kmeans++ for initialization. Can use "lloyd" or "elkan" algorithm. 
+            You can adjust the number of clusters, which is only for demonstration purposes and should be two :exclamation:
+            
+            The cluster centroids can be interpreted as the mean (average) spectra of the classes. Variation is depicted as shaded area. 
+            If this area overlaps, a clear separation may not be possible.
+            
+            If not scaled data is used, this can result in 100% recall one class classification result. 
+            One option for data with high dimensions is reduce dimensionality with PCA before applying K-Means.
+        """)
+
+    with st.form("kmeans_form"):
+        k_col1, k_col2 = st.columns(2)
+        with k_col1:
+            k_val = st.number_input("Number of Clusters:", value=2, step=1, min_value=2, max_value=6)
+            k_algo = st.selectbox("Algorithm:", ("lloyd", "elkan"), index=0)
+        with k_col2:
+            k_data_channel = st.selectbox("Select the data:", ("Spectra", "1st Derivative"), index=0)
+            k_pca = st.checkbox("Apply PCA before K-Means?", value=False,
+                                help="Reduces dimensionality before clustering with 5 pca components.")
+        kmeans_submit = st.form_submit_button("Run K-Means Clustering", type="primary")
+
+    if kmeans_submit:
+        km_data = data[mapping_data[k_data_channel]]
         n_samples = len(km_data)
         labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples // 2)
 
-        st.session_state.kmeans_results = cluster_kmeans(km_data, labels, n_clusters=2)
+        st.session_state.kmeans_results = cluster_kmeans(km_data, labels, n_clusters=k_val, algorithm=k_algo, pre_pca=k_pca)
 
     if st.session_state.kmeans_results is not None:
-        actual_means, predicted_means, confusion_matrix, metrics = st.session_state.kmeans_results
+        actual_means, (pred_means, pred_stds), confusion_matrix, metrics = st.session_state.kmeans_results
 
         st.write("Comparing the average spectra of actual classes vs. K-Means identified clusters:")
         col1, col2 = st.columns(2)
 
         with col1:
             fig_act, ax_act = plt.subplots()
-            sns.lineplot(data=actual_means.T, legend=False, ax=ax_act)
+            sns.lineplot(data=actual_means.T, legend=False, ax=ax_act, dashes=False)
             ax_act.set_title("Actual Class Averages")
             ax_act.set_ylabel("Intensity")
             st.pyplot(fig_act)
 
         with col2:
             fig_pred, ax_pred = plt.subplots()
-            sns.lineplot(data=predicted_means.T, legend=False, ax=ax_pred)
+
+            for i, cluster_name in enumerate(pred_means.index):
+                mean_curve = pred_means.loc[cluster_name]
+                std_curve = pred_stds.loc[cluster_name]
+                x_vals = range(len(mean_curve))
+
+                # Plot the main line
+                ax_pred.plot(x_vals, mean_curve, label=cluster_name)
+                # Plot the variation area
+                ax_pred.fill_between(x_vals,
+                                     mean_curve - std_curve,
+                                     mean_curve + std_curve,
+                                     alpha=0.2)
             ax_pred.set_title("K-Means Cluster Centroids")
             ax_pred.set_ylabel("Intensity")
             st.pyplot(fig_pred)
 
         st.write("Clustering Performance Metrics:")
         m_col1, m_col2, m_col3, m_col4 = st.columns(4)
-        m_col1.metric("Accuracy", f"{metrics['Accuracy']:.1%}")
-        m_col2.metric("Precision", f"{metrics['Precision']:.1%}")
-        m_col3.metric("Recall", f"{metrics['Recall']:.1%}")
-        m_col4.metric("F1-Score", f"{metrics['F1-Score']:.1%}")
+        m_col1.metric("Accuracy", f"{metrics['Accuracy']:.1%}", delta = f"{metrics['Accuracy']-0.5:.1%}",border=True)
+        m_col2.metric("Precision", f"{metrics['Precision']:.1%}", delta = f"{metrics['Precision']-0.5:.1%}", border=True)
+        m_col3.metric("Recall", f"{metrics['Recall']:.1%}", delta = f"{metrics['Recall']-0.5:.1%}", border=True)
+        m_col4.metric("F1-Score", f"{metrics['F1-Score']:.1%}", delta = f"{metrics['F1-Score']-0.5:.1%}", border=True)
 
         st.write("**Confusion Matrix:**")
         st.table(confusion_matrix)
@@ -315,6 +355,11 @@ with tab_cluster:
         svm_col1, svm_col2 = st.columns(2)
         with svm_col1:
             kernel = st.selectbox("Kernel:", ("linear", "poly", "rbf", "sigmoid"), help="Determines the shape of the decision boundary. 'linear' is simple, 'rbf' handles complex non-linear patterns.")
+            svm_pca_col1, svm_pca_col2 = st.columns(2)
+            with svm_pca_col1:
+                svm_pca = st.checkbox("Apply PCA before SVM?", value=False, help="Reduces dimensionality before classification with x pca components.")
+            with svm_pca_col2:
+                svm_pca_comps = st.number_input("Number of PCA Components:", value=5, step=1, min_value=2, max_value=15, help="Number of components to use for PCA before classification.")
         with svm_col2:
             c_val = st.number_input("C (Regularization):", value=1.0, min_value=0.01, step=0.1, help="Controls the trade-off between smooth boundary and classifying training points correctly. Smaller C = smoother boundary (less overfitting).")
             data_channel = st.selectbox("Select the data:", ("Spectra", "1st Derivative"), index=0)
@@ -324,24 +369,24 @@ with tab_cluster:
         svm_data = data[mapping_data[data_channel]]
         n_samples = len(svm_data)
         labels = ["First Class"] * (n_samples // 2) + ["Second Class"] * (n_samples // 2)
-        st.session_state.svm_results = classify_svm(svm_data, labels, kernel=kernel, c=c_val)
+        st.session_state.svm_results = classify_svm(svm_data, labels, kernel=kernel, c=c_val, use_pca=svm_pca, pca_comp=svm_pca_comps)
 
     if st.session_state.svm_results is not None:
         svm_train, svm_test, cm_train, cm_test = st.session_state.svm_results
 
         st.write("**Training Set Metrics:**")
         tr_col1, tr_col2, tr_col3, tr_col4 = st.columns(4)
-        tr_col1.metric("Accuracy", f"{svm_train['Accuracy']:.1%}")
-        tr_col2.metric("Precision", f"{svm_train['Precision']:.1%}")
-        tr_col3.metric("Recall", f"{svm_train['Recall']:.1%}")
-        tr_col4.metric("F1-Score", f"{svm_train['F1-Score']:.1%}")
+        tr_col1.metric("Accuracy", f"{svm_train['Accuracy']:.1%}", delta = f"{svm_train['Accuracy']-0.5:.1%}", border=True)
+        tr_col2.metric("Precision", f"{svm_train['Precision']:.1%}", delta = f"{svm_train['Precision']-0.5:.1%}", border=True)
+        tr_col3.metric("Recall", f"{svm_train['Recall']:.1%}", delta = f"{svm_train['Recall']-0.5:.1%}", border=True)
+        tr_col4.metric("F1-Score", f"{svm_train['F1-Score']:.1%}", delta = f"{svm_train['F1-Score']-0.5:.1%}", border=True)
 
         st.write("**Test Set Metrics:**")
         te_col1, te_col2, te_col3, te_col4 = st.columns(4)
-        te_col1.metric("Accuracy", f"{svm_test['Accuracy']:.1%}")
-        te_col2.metric("Precision", f"{svm_test['Precision']:.1%}")
-        te_col3.metric("Recall", f"{svm_test['Recall']:.1%}")
-        te_col4.metric("F1-Score", f"{svm_test['F1-Score']:.1%}")
+        te_col1.metric("Accuracy", f"{svm_test['Accuracy']:.1%}", delta = f"{svm_test['Accuracy']-0.5:.1%}", border=True)
+        te_col2.metric("Precision", f"{svm_test['Precision']:.1%}", delta = f"{svm_test['Precision']-0.5:.1%}", border=True)
+        te_col3.metric("Recall", f"{svm_test['Recall']:.1%}", delta = f"{svm_test['Recall']-0.5:.1%}", border=True)
+        te_col4.metric("F1-Score", f"{svm_test['F1-Score']:.1%}", delta = f"{svm_test['F1-Score']-0.5:.1%}", border=True)
 
         col_cm1, col_cm2 = st.columns(2)
         with col_cm1:
@@ -420,8 +465,8 @@ with tab_CNN:
 
     if st.session_state.saved_images is not None:
         saved_images = st.session_state.saved_images
-        converted_img = saved_images[1].convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
-        st.image(converted_img, caption= "CONTROL - This is one of the images in memory...", width="stretch")
+        converted_img = saved_images[1].convert('RGB').resize((224, 224), Image.Resampling.BOX, reducing_gap=3)
+        st.image(converted_img, caption= "CONTROL - This is one of the images in memory...", width="content")
 
     with st.form("cnn_hyperparams"):
         c_col1, c_col2 = st.columns(2)
@@ -459,12 +504,12 @@ with tab_CNN:
         st.write("**Training Set:**")
         tr_col = st.columns(4)
         for i, (k, v) in enumerate(train_m.items()):
-            tr_col[i].metric(k, f"{v:.1%}")
+            tr_col[i].metric(k, f"{v:.1%}", delta=f"{v-0.5:.1%}", border=True)
 
         st.write("**Test Set:**")
         te_col = st.columns(4)
         for i, (k, v) in enumerate(test_m.items()):
-            te_col[i].metric(k, f"{v:.1%}")
+            te_col[i].metric(k, f"{v:.1%}", delta=f"{v-0.5:.1%}", border=True)
 
         col_cm1, col_cm2 = st.columns(2)
         with col_cm1:
