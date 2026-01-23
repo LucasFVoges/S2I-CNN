@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import ssl
 from tensorflow.keras import layers, models, applications
+from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from PIL import Image
@@ -12,6 +13,8 @@ import streamlit as st
 MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
 os.makedirs(MODELS_DIR, exist_ok=True)
 MODEL_PATH = os.path.join(MODELS_DIR, 'mobilenet_v2_base.h5')
+VGG16_MODEL_PATH = os.path.join(MODELS_DIR, 'vgg16_base.h5')
+
 
 # Bypass SSL certificate verification for weight downloads
 ssl._create_default_https_context = ssl._create_unverified_context
@@ -46,6 +49,22 @@ def get_mobilenet_base():
         base_model.save(MODEL_PATH)
 
     base_model.trainable = False  # Freeze the pretrained weights
+    return base_model
+
+@st.cache_resource
+def get_vgg16_base():
+    """Loads and caches the pretrained VGG-16 base model to prevent retracing."""
+    if os.path.exists(VGG16_MODEL_PATH):
+        base_model = models.load_model(VGG16_MODEL_PATH, compile=False)
+    else:
+        base_model = applications.VGG16(
+            input_shape=(224, 224, 3),
+            include_top=False,
+            weights="imagenet"
+        )
+        base_model.save(VGG16_MODEL_PATH)
+
+    base_model.trainable = False  # Freeze pretrained weights (feature extractor)
     return base_model
 
 
@@ -90,7 +109,6 @@ def train_simple_cnn(images, labels, epochs=5, batch_size=16):
 
     return model, history, (train_metrics, test_metrics, train_cm, test_cm)
 
-
 def train_pretrained_cnn(images, labels, epochs=5, batch_size=16):
     # 1. Prepare images for Transfer Learning (ResNet/MobileNet expect 3 channels and specific sizes)
     # We resize our 1D image to 224x224 to fit standard architectures
@@ -126,6 +144,85 @@ def train_pretrained_cnn(images, labels, epochs=5, batch_size=16):
 
     history = model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size,
                         validation_data=(X_test, y_test), verbose=0)
+
+    train_metrics, train_cm = calculate_metrics(y_train, model.predict(X_train, verbose=0))
+    test_metrics, test_cm = calculate_metrics(y_test, model.predict(X_test, verbose=0))
+
+    return model, history, (train_metrics, test_metrics, train_cm, test_cm)
+
+def train_vgg16_cnn(images, labels, epochs=5, batch_size=16, fine_tune=False, fine_tune_at=None):
+    """
+    Train a VGG-16 transfer learning model (binary classification).
+
+    Params:
+      - images: list of PIL Images
+      - labels: list[str] with "First Class" / "Second Class"
+      - fine_tune: if True, unfreezes part of VGG-16 for fine-tuning
+      - fine_tune_at: layer index in VGG-16 to start unfreezing from (e.g. -8 or a positive index).
+                      If None and fine_tune=True, unfreezes the last convolutional block (block5).
+    """
+    # 1) Resize to VGG input + ensure RGB
+    target_size = (224, 224)
+    X = []
+    if images[0].size != target_size:
+        for img in images:
+            img_rgb = img.convert("RGB").resize(target_size, Image.Resampling.BOX, reducing_gap=3)
+            X.append(np.array(img_rgb))
+    else:
+        print("Images already right size. Skipping resize.")
+        X = images
+
+    X = np.array(X).astype("float32")
+
+    # 2) VGG-16 preprocessing (expects RGB in 0-255; converts to BGR + mean subtraction)
+    X = applications.vgg16.preprocess_input(X)
+
+    # 3) Labels + split
+    y = np.array([0 if l == "First Class" else 1 for l in labels])
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3)
+
+    # 4) Base model
+    base_model = get_vgg16_base()
+
+    # Optional fine-tuning
+    if fine_tune:
+        base_model.trainable = True
+        if fine_tune_at is None:
+            # Unfreeze from the last conv block by name (robust to minor index differences)
+            unfreeze = False
+            for layer in base_model.layers:
+                if layer.name.startswith("block5_"):
+                    unfreeze = True
+                layer.trainable = unfreeze
+        else:
+            for layer in base_model.layers[:fine_tune_at]:
+                layer.trainable = False
+            for layer in base_model.layers[fine_tune_at:]:
+                layer.trainable = True
+    else:
+        base_model.trainable = False
+
+    # 5) Classification head
+    model = models.Sequential([
+        base_model,
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(128, activation="relu"),
+        layers.Dropout(0.4),
+        layers.Dense(1, activation="sigmoid")
+    ])
+
+    # A slightly lower LR is often nicer if you fine-tune
+    optimizer = "adam" if not fine_tune else Adam(learning_rate=1e-5)
+
+    model.compile(optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"])
+
+    history = model.fit(
+        X_train, y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_data=(X_test, y_test),
+        verbose=0
+    )
 
     train_metrics, train_cm = calculate_metrics(y_train, model.predict(X_train, verbose=0))
     test_metrics, test_cm = calculate_metrics(y_test, model.predict(X_test, verbose=0))

@@ -10,7 +10,7 @@ from PIL import Image
 from functions.ImageEncoder import image_encoder, spider_image_encoder
 from functions.DataGenerator import data_gen
 from functions.Clustering import cluster_pca, cluster_tsne, cluster_kmeans, cluster_dbscan, classify_svm
-from functions.CNN import train_simple_cnn, train_pretrained_cnn
+from functions.CNN import train_simple_cnn, train_pretrained_cnn, train_vgg16_cnn
 
 # Streamlit Layout
 plt.style.use("dark_background")
@@ -528,13 +528,11 @@ with tab_CNN:
             labels = ["First Class"] * (num_total // 2) + ["Second Class"] * (num_total // 2)
 
             if cnn_type == "Simple 1D-CNN":
-                model, history, results = train_simple_cnn(st.session_state.saved_images, labels, epochs=e_val,
-                                                           batch_size=b_val)
+                model, history, results = train_simple_cnn(st.session_state.saved_images, labels, epochs=e_val, batch_size=b_val)
             elif cnn_type == "Pretrained MobileNetV2":
-                model, history, results = train_pretrained_cnn(st.session_state.saved_images, labels, epochs=e_val,
-                                                               batch_size=b_val)
+                model, history, results = train_pretrained_cnn(st.session_state.saved_images, labels, epochs=e_val, batch_size=b_val)
             elif cnn_type == "pretrained VGG-16":
-                model, history, results = None, None, None
+                model, history, results = train_vgg16_cnn(saved_images, labels, epochs=e_val, batch_size=b_val)
             else:
                 st.error("Invalid CNN Type!")
                 model, history, results = None, None, None
