@@ -10,7 +10,7 @@ jupyterlab
 pydot==2.0.0
 numpy<2.0.0
 streamlit
-pillow
+pillow>3.4.0
 matplotlib
 scipy
 tensorflow

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.signal import savgol_filter
 from PIL import Image
-from functions.ImageEncoder import image_encoder
+from functions.ImageEncoder import image_encoder, spider_image_encoder
 from functions.DataGenerator import data_gen
 from functions.Clustering import cluster_pca, cluster_tsne, cluster_kmeans, cluster_dbscan, classify_svm
 from functions.CNN import train_simple_cnn, train_pretrained_cnn
@@ -78,8 +78,9 @@ tab_about, tab_data, tab_cluster, tab_S2I, tab_CNN = st.tabs(["About", "Data", "
 
 with tab_about:
     st.header("About S2I - CNN")
-    st.write("Spectra2Image CNN is a noval approach that is designed to use minimal differences in spectral data to classify them accordingly.")
-    st.write("This approach use image conversion from classical spectra tabular data with the goal to utilise pre-trained image classification Networks.")
+    st.write("pectra2Image CNN introduces an innovative method for detecting subtle variations in spectral data that traditional machine learning techniques often miss. "
+             "By applying transfer learning, it converts spectral tabular data into image representations, "
+             "enabling the use of powerful pre-trained image classification networks for enhanced accuracy and sensitivity.")
 
     st.info("**Info:** This simulation should provide the answer to the following question: "
             "Does a spectra like dataset with minimal change between two classes can be differentiated. "
@@ -94,6 +95,8 @@ with tab_about:
         - For high-dimensional sparse data it is helpful to first reduce the dimensions to 50 dimensions with `TruncatedSVD` and then perform t-SNE. This will usually improve the visualization.
         - Train and Test split are random. Maybe it would be better to use a fixed set for all methods, when data is generated.
         - For Classification: Use the PCA or T-SNE results for the K-Means clustering or SVM.
+        - Add CV for the supervised learning methods.
+        - Improve Spider Plot Generation! (Missing Formats)
         """
     st.write(future_add_text)
 
@@ -398,62 +401,101 @@ with tab_cluster:
             st.table(cm_test)
 
 with tab_S2I:
-    st.header("S2I")
+    st.header("Spectra to Image converter")
     st.info("**WARNING:** Images displayed here are not the original images! "
-             "Due to anti-aliasing and the display in a visible size in the browser, "
-             "the Images may seem blurred or in a different size. "
-             "**Selection** of the data (derivatives) is important, as it is used in the order selected. For BW (Black and White) model, only the first selection is used..." )
+            "Due to anti-aliasing and the display in a visible size in the browser, "
+            "the Images may seem blurred or in a different size. "
+            "**Selection** of the data (derivatives) is important, as it is used in the order selected. For BW (Black and White) model, only the first selection is used...")
 
     # Local variables
     x_size, y_size = 1000, 40
 
     # Input:
-    data_which_deriv = st.multiselect("Which spectra data should be used? (order matters!)", ["0st Derivative", "1st Derivative", "2st Derivative", "3st Derivative"], default=["0st Derivative", "1st Derivative", "2st Derivative"])
-    conv = st.selectbox("Select the conversion model:", ('BW: Black and White','RGB: Red Green Blue', 'HSL: Hue Saturation Lightness', 'LAB: Lightness A B'))
+    data_which_deriv = st.multiselect("Which spectra data should be used? Order important! :warning: does sometimes not reset, click again!",
+                                      ["raw spectra (1)", "raw spectra (2)", "raw spectra (3)", "1st Derivative", "2st Derivative", "3st Derivative"],
+                                      default=["raw spectra (1)", "1st Derivative", "2st Derivative"])
+    conv = st.selectbox("Select the conversion model:",
+                        ('BW: Black and White', 'RGB: Red Green Blue', 'HSV: Hue Saturation Value',
+                         'LAB: Lightness A B'))
     # todo: check the input dynamically, so that only models can be selected that are compatible with the data!
 
     # Mapping:
-    mapping_data = {"0st Derivative": "raw", "1st Derivative": "d1", "2st Derivative": "d2", "3st Derivative": "d3"}
+    mapping_data = {"raw spectra (1)": "raw", "raw spectra (2)": "raw", "raw spectra (3)": "raw", "1st Derivative": "d1", "2st Derivative": "d2", "3st Derivative": "d3"}
     selection = []
     for i in data_which_deriv: selection.append(mapping_data[i])
 
     # Mapping conv:
-    mapping_conv = {"BW: Black and White": "BW", "RGB: Red Green Blue": "RGB", "HSL: Hue Saturation Lightness": "HSV", "LAB: Lightness A B": "LAB"}
+    mapping_conv = {"BW: Black and White": "BW", "RGB: Red Green Blue": "RGB",
+                    "HSV: Hue Saturation Value": "HSV",
+                    "LAB: Lightness A B": "LAB"}
 
-    st.subheader(f"Image of Spectra for {conv} Conversion:")
+    tab_S2I_lin, tab_S2I_spider = st.tabs(["1D-Image", "Spider-Plots"])
+    with tab_S2I_lin:
+        st.subheader(f"Image of Spectra for {conv} Conversion:")
 
-    images_l, images_c, images_r = st.columns(3)
-    with images_l: pass
-    with images_r: pass
-    with images_c:
-        if st.button("Save all Images for CNN", type="primary", help="This will bring all spectra images into memory!"):
-            with st.spinner(text="Saving...", show_time=True):
-                st.session_state.cnn_results = None
-                st.session_state.saved_images = []
-                for i in range(len(data["raw"])):
-                    img = image_encoder(data, selection, i, mapping_conv[conv])
-                    st.session_state.saved_images.append(img)
-            st.success("Images saved!")
+        images_l, images_c, images_r = st.columns(3)
+        with images_l: pass
+        with images_r: pass
+        with images_c:
+            if st.button("Save all Images for CNN", key="normal_S2I", type="primary", help="This will bring all spectra images into memory!", width="stretch"):
+                with st.spinner(text="Saving...", show_time=True):
+                    st.session_state.cnn_results = None
+                    st.session_state.saved_images = []
+                    for i in range(len(data["raw"])):
+                        img = image_encoder(data, selection, i, mapping_conv[conv])
+                        st.session_state.saved_images.append(img)
+                st.success("Images saved!")
 
-    # Image examples
-    st.text("First Class:")
-    for i in range(10):
-        img = image_encoder(data, selection, i, mapping_conv[conv])
-        if img:
-            converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
-            st.image(converted_img, width="stretch")
-        else:
-            st.error("Failed to generate image.")
-            break
-    st.text("Second Class:")
-    for i in range(10):
-        img = image_encoder(data, selection, data["raw"].shape[0] - (i+1), mapping_conv[conv])
-        if img:
-            converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
-            st.image(converted_img, width="stretch")
-        else:
-            st.error("Failed to generate image.")
-            break
+        # Image examples
+        st.text("First Class:")
+        for i in range(10):
+            img = image_encoder(data, selection, i, mapping_conv[conv])
+            if img:
+                converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
+                st.image(converted_img, width="stretch")
+            else:
+                st.error("Failed to generate image.")
+                break
+        st.text("Second Class:")
+        for i in range(10):
+            img = image_encoder(data, selection, data["raw"].shape[0] - (i+1), mapping_conv[conv])
+            if img:
+                converted_img = img.convert('RGB').resize((x_size, y_size), Image.Resampling.BOX)
+                st.image(converted_img, width="stretch")
+            else:
+                st.error("Failed to generate image.")
+                break
+
+    with tab_S2I_spider:
+        st.subheader("Convert to Spider-Plots")
+        st.info("Method from A. Mokari et al. Adapting Image-Based Models for 1D Data via Spider Plot Transformation and Transfer Learning, *Adv. Intell. Syst.* 2025, DOI: 10.1002/aisy.202500069")
+        st.write("Spectra are projected on polar coordinates. and coloured with the hue value from the first derivative. This is an adaptation of Mokari et al.'s method as they coloured the plot only by intensity variation."
+                 "So it contains the same information but in a 2D space with additional spatial information about the intensity. To use more of the available space, plots can be scaled, therefore intensities start at eg. 10% of the pixel space.")
+
+        st.warning("**WARNING:** LAB Model is not jet implemented. HSV is recommended. Works with just one additional data for the hue!")
+
+        images_spid_l, images_spid_c, images_spid_r = st.columns(3)
+        with images_spid_l:
+            img_spider = spider_image_encoder(data, data_keys=selection, spectra_num=0, shema=mapping_conv[conv], margin=1, outline_width=2)
+            if img_spider:
+                st.image(img_spider, width="stretch")
+            else:
+                st.error("Failed to generate image.")
+        with images_spid_r:
+            img_spider = spider_image_encoder(data, data_keys=selection, spectra_num=data["raw"].shape[0] - (i+1), shema=mapping_conv[conv], margin=1, outline_width=2)
+            if img_spider:
+                st.image(img_spider, width="stretch")
+            else:
+                st.error("Failed to generate image.")
+        with images_spid_c:
+            if st.button("Save all Images for CNN", key="spider_S2I", type="primary", help="This will bring all spectra images into memory!", width="stretch"):
+                with st.spinner(text="Saving...", show_time=True):
+                    st.session_state.cnn_results = None
+                    st.session_state.saved_images = []
+                    for i in range(len(data["raw"])):
+                        img = spider_image_encoder(data, data_keys=selection, spectra_num=i, margin=1, shema=mapping_conv[conv], outline_width=1)
+                        st.session_state.saved_images.append(img)
+                st.success("Images saved!")
 
 with tab_CNN:
     st.header("CNN")
@@ -472,7 +514,7 @@ with tab_CNN:
         c_col1, c_col2 = st.columns(2)
         with c_col1:
             e_val = st.number_input("Epochs:", value=10, min_value=1, max_value=100, step=5)
-            cnn_type = st.selectbox("Model Type:", ["Simple 1D-CNN", "Pretrained MobileNetV2"], help="MobileNetV2 converts the images to 224x224")
+            cnn_type = st.selectbox("Model Type:", ["Simple 1D-CNN", "Pretrained MobileNetV2", "pretrained VGG-16"], help="MobileNetV2 converts the images to 224x224 (if not already)")
         with c_col2:
             b_val = st.select_slider("Batch Size:", options=[4, 8, 16, 32, 64, 128], value=16)
 
@@ -488,10 +530,19 @@ with tab_CNN:
             if cnn_type == "Simple 1D-CNN":
                 model, history, results = train_simple_cnn(st.session_state.saved_images, labels, epochs=e_val,
                                                            batch_size=b_val)
-            else:
+            elif cnn_type == "Pretrained MobileNetV2":
                 model, history, results = train_pretrained_cnn(st.session_state.saved_images, labels, epochs=e_val,
                                                                batch_size=b_val)
-            st.session_state.cnn_results = {"history": history.history, "metrics": results}
+            elif cnn_type == "pretrained VGG-16":
+                model, history, results = None, None, None
+            else:
+                st.error("Invalid CNN Type!")
+                model, history, results = None, None, None
+            if results is None:
+                st.error("Training not posssible (wrong format of images?)!")
+                st.session_state.cnn_results = None
+            else:
+                st.session_state.cnn_results = {"history": history.history, "metrics": results}
 
     if st.session_state.cnn_results is not None:
         res = st.session_state.cnn_results

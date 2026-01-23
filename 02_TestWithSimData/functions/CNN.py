@@ -56,6 +56,8 @@ def train_simple_cnn(images, labels, epochs=5, batch_size=16):
 
     # If height is 1, X shape is (Samples, 1, Width, Channels) or (Samples, 1, Width)
     # We want to squeeze out that 1-pixel height dimension for a 1D CNN
+    if X.shape[1] != 1:
+        return None, None, None
     if len(X.shape) == 4: # (Samples, Height, Width, Channels)
         X = np.squeeze(X, axis=1)
     elif len(X.shape) == 3: # (Samples, Height, Width)
@@ -93,9 +95,14 @@ def train_pretrained_cnn(images, labels, epochs=5, batch_size=16):
     # 1. Prepare images for Transfer Learning (ResNet/MobileNet expect 3 channels and specific sizes)
     # We resize our 1D image to 224x224 to fit standard architectures
     X = []
-    for img in images:
-        img_rgb = img.convert('RGB').resize((224, 224), Image.Resampling.BOX, reducing_gap=3)
-        X.append(np.array(img_rgb))
+    target_size = (224, 224)
+    if images[0].size != target_size:
+        for img in images:
+            img_rgb = img.convert('RGB').resize(target_size, Image.Resampling.BOX, reducing_gap=3)
+            X.append(np.array(img_rgb))
+    else:
+        X = images
+        print("Images already right size. Skipping resize.")
 
     X = np.array(X).astype('float32')
 
