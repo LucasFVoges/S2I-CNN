@@ -97,6 +97,7 @@ with tab_about:
         - For Classification: Use the PCA or T-SNE results for the K-Means clustering or SVM.
         - Add CV for the supervised learning methods.
         - Improve Spider Plot Generation! (Missing Formats)
+        - Make the derivatives smoother!
         """
     st.write(future_add_text)
 

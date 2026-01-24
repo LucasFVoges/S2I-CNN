@@ -1,4 +1,4 @@
-#tensorflow==2.15
+tensorflow==2.15.0
 #tensorflow-metal==1.1.0
 #tensorflow-hub==0.16.1
 #tensorflow-docs
@@ -13,4 +13,3 @@ streamlit
 pillow>3.4.0
 matplotlib
 scipy
-tensorflow
