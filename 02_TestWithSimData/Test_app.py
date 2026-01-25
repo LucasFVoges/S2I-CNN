@@ -68,6 +68,8 @@ if 'svm_results' not in st.session_state:
     st.session_state.svm_results = None
 if 'saved_images' not in st.session_state:
     st.session_state.saved_images = None
+if 'cnn_results' not in st.session_state:
+    st.session_state.cnn_results = None
 
 data = st.session_state.data
 
@@ -148,6 +150,7 @@ with tab_data:
         st.session_state.kmeans_results = None
         st.session_state.dbscan_results = None
         st.session_state.svm_results = None
+        st.session_state.cnn_results = None
         st.rerun()
 
     spec_tab, deriv_tab, deriv_2_tab, deriv_3_tab = st.tabs(["Spectra", "Spectra 1st Derivative", "Spectra 2nd Derivative", "Spectra 3rd Derivative"])
